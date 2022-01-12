@@ -14,7 +14,7 @@
  * SPDX-License-Identifier: EPL-2.0 OR GPL-2.0 WITH Classpath-exception-2.0
  ********************************************************************************/
 
-import { injectable, inject } from '@theia/core/shared/inversify';
+import { injectable, inject, postConstruct } from '@theia/core/shared/inversify';
 import {
     FrontendApplicationContribution, StatusBar, FrontendApplication, StatusBarAlignment, KeybindingContribution, KeybindingRegistry, KeybindingContext
 } from '@theia/core/lib/browser';
@@ -26,11 +26,15 @@ import { NotificationsRenderer } from './notifications-renderer';
 import { ColorContribution } from '@theia/core/lib/browser/color-application-contribution';
 import { ColorRegistry, Color } from '@theia/core/lib/browser/color-registry';
 import { nls } from '@theia/core/lib/common/nls';
+import { ContextKeyService } from '@theia/core/lib/browser/context-key-service';
 
 @injectable()
 export class NotificationsContribution implements FrontendApplicationContribution, CommandContribution, KeybindingContribution, ColorContribution {
 
     protected readonly id = 'theia-notification-center';
+
+    @inject(ContextKeyService)
+    protected contextKeyService: ContextKeyService;
 
     @inject(NotificationManager)
     protected readonly manager: NotificationManager;
@@ -43,6 +47,33 @@ export class NotificationsContribution implements FrontendApplicationContributio
 
     onStart(_app: FrontendApplication): void {
         this.createStatusBarItem();
+    }
+
+    @postConstruct()
+    protected init(): void {
+        const notificationFocus = this.contextKeyService.createKey<boolean>('notificationFocus', false);
+        const updateNotificationFocusKey = () => notificationFocus.set(this.notificationHasFocus());
+        updateNotificationFocusKey();
+
+        const notificationCenterVisible = this.contextKeyService.createKey<boolean>('notificationCenterVisible', false);
+        const updateNotificationCenterVisibleKey = () => notificationCenterVisible.set(this.notificationCenterIsVisible());
+        updateNotificationCenterVisibleKey();
+
+        const notificationToastsVisible = this.contextKeyService.createKey<boolean>('notificationToastsVisible', false);
+        const updateNotificationToastsVisibleKey = () => notificationToastsVisible.set(this.notificationToastsAreVisible());
+        updateNotificationToastsVisibleKey();
+    }
+
+    protected notificationHasFocus(): boolean {
+        return this.notificationCenterIsVisible() || this.notificationToastsAreVisible();
+    }
+
+    protected notificationCenterIsVisible(): boolean {
+        return this.manager.centerVisible;
+    }
+
+    protected notificationToastsAreVisible(): boolean {
+        return this.manager.toastsVisible;
     }
 
     protected createStatusBarItem(): void {
@@ -92,7 +123,7 @@ export class NotificationsContribution implements FrontendApplicationContributio
     registerKeybindings(keybindings: KeybindingRegistry): void {
         keybindings.registerKeybinding({
             command: NotificationsCommands.HIDE.id,
-            context: NotificationsKeybindingContext.notificationsVisible,
+            when: 'notificationFocus',
             keybinding: 'esc'
         });
     }
@@ -173,20 +204,4 @@ export class NotificationsContribution implements FrontendApplicationContributio
         );
     }
 
-}
-
-@injectable()
-export class NotificationsKeybindingContext implements KeybindingContext {
-
-    @inject(NotificationManager)
-    protected readonly manager: NotificationManager;
-
-    readonly id = NotificationsKeybindingContext.notificationsVisible;
-    isEnabled(_arg: Keybinding): boolean {
-        return this.manager.centerVisible || this.manager.toastsVisible;
-    }
-
-}
-export namespace NotificationsKeybindingContext {
-    export const notificationsVisible = 'notificationsVisible';
 }
